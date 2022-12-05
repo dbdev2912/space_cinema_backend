@@ -5,6 +5,7 @@ const { connector } = require('./templates/db/connector.js');
 
 const app = express()
 
+const { cropIMG } = require('./templates/img/cropImage.js');
 
 /* middlewares */
 
@@ -14,12 +15,69 @@ app.use(require('express-session')());
 app.use(express.json());
 
 app.use( express.static('public') );
+
+const bodyParser = require('body-parser');
+
+app.use(bodyParser.urlencoded({
+    limit: "50mb",
+    extended: false,
+}));
+
+app.use( bodyParser.json({ limit: "50mb" }) );
+
+
 /* GET routing */
 app.get('/', (req, res) => {
     res.send({ msg: "Hello World" });
 })
 
 app.get('/data', (req, res)=>{
+
+});
+
+app.get('/api/session/retrieve', (req, res)=>{
+    let credential = {};
+    let customer_info = {};
+    if( req.session.admin ){
+        credential = req.session.admin;
+        return res.send({ session: true, sessionCredential: credential, customer_info })
+    }else
+    if( req.session.staff ){
+        credential = req.session.staff;
+
+        return res.send({ session: true, sessionCredential: credential, customer_info })
+    } else
+    if( req.session.user ){
+        credential = req.session.user;
+
+        connector( (dbo) => {
+            dbo.collection('customer').findOne( { username: credential.username }, (err, result) => {
+                const customer = result;
+
+                return res.send({ session: true, sessionCredential: credential, customer_info: customer })
+            })
+        } )
+    }else{
+
+        return res.send({  session: false, sessionCredential: credential, customer_info })
+    }
+})
+
+app.get('/api/signout', (req, res) => {
+    delete req.session.admin;
+    delete req.session.user;
+    delete req.session.staff;
+
+    res.send({});
+})
+
+
+app.get('/api/films', ( req, res ) => {
+
+    connector( (dbo) => {
+        dbo.collection('films').find({}).toArray((err, result) => {
+            res.send({ films: result });
+        })    })
 
 });
 
@@ -55,6 +113,39 @@ app.post('/api/login', (req, res)=>{
             res.send(response)
         });
     });
+});
+
+
+app.post('/api/new/film', (req, res) => {
+    const { film, img } = req.body;
+    let id;
+    const folder = "film";
+
+    connector( (dbo) => {
+        dbo.collection("keys").findOne({"type": "film_id"}, (err, result) => {
+            if(!result){
+                id = 0;
+                dbo.collection("keys").insertOne({"type": "film_id", "current_id": 0}, function(err, result){
+
+                });
+            }else{
+                id = result.current_id + 1;
+                dbo.collection("keys").update({"type": "film_id"}, { $set: { "current_id": id } }, function( err, result ){
+
+                });
+
+
+                cropIMG(img, id, folder, "-1");
+                dbo.collection("films").insertOne(
+                    { ...film, img: `/images/${folder}/${folder}-${id}-1.png`, film_id: id }
+                    ,
+                    function(err, result){
+                        res.send({ success: true })
+                });
+            }
+        })
+    })
+
 });
 
 
