@@ -9,13 +9,9 @@ const { cropIMG } = require('./templates/img/cropImage.js');
 
 /* middlewares */
 
-app.use(require('body-parser')());
 app.use(require('cookie-parser')(secret.cookie));
 app.use(require('express-session')());
-app.use(express.json());
-
 app.use( express.static('public') );
-
 const bodyParser = require('body-parser');
 
 app.use(bodyParser.urlencoded({
@@ -25,6 +21,7 @@ app.use(bodyParser.urlencoded({
 
 app.use( bodyParser.json({ limit: "50mb" }) );
 
+// app.use(express.json());
 
 /* GET routing */
 app.get('/', (req, res) => {
@@ -77,9 +74,19 @@ app.get('/api/films', ( req, res ) => {
     connector( (dbo) => {
         dbo.collection('films').find({}).toArray((err, result) => {
             res.send({ films: result });
-        })    })
-
+        })
+    })
 });
+
+app.get('/api/cats', ( req, res ) => {
+
+    connector( (dbo) => {
+        dbo.collection('categories').find({}).toArray((err, result) => {
+            res.send({ cats: result });
+        })
+    })
+});
+
 
 /* POST routing */
 
@@ -125,12 +132,12 @@ app.post('/api/new/film', (req, res) => {
         dbo.collection("keys").findOne({"type": "film_id"}, (err, result) => {
             if(!result){
                 id = 0;
-                dbo.collection("keys").insertOne({"type": "film_id", "current_id": 0}, function(err, result){
+                dbo.collection("keys").insertOne({"type": "film_id", "current_id": 0}, (err, result) => {
 
                 });
             }else{
                 id = result.current_id + 1;
-                dbo.collection("keys").update({"type": "film_id"}, { $set: { "current_id": id } }, function( err, result ){
+                dbo.collection("keys").update({"type": "film_id"}, { $set: { "current_id": id } }, ( err, result ) => {
 
                 });
 
@@ -148,6 +155,63 @@ app.post('/api/new/film', (req, res) => {
 
 });
 
+
+app.post('/api/cates/create', (req, res) => {
+    const { cat } = req.body;
+    let id;
+
+    connector( (dbo) => {
+        dbo.collection("keys").findOne({ "type": "category_id" }, (err, result) => {
+            if( !result ) {
+                id = 0;
+                dbo.collection("keys").insertOne({"type": "category_id", "current_id": id}, (err, result) => {
+                    dbo.collection("categories").insertOne( { ...cat, id }, (err, result) => {
+                        res.send({ success: true })
+                    } );
+                })
+            }else{
+                id = result.current_id + 1;
+                dbo.collection('keys').update({ "type": "category_id" }, { $set: {"current_id": id} }, (err, result)=> {
+                    dbo.collection("categories").insertOne( { ...cat, id }, (err, result) => {
+                        res.send({ success: true })
+                    } );
+                });
+            }
+        });
+    })
+
+})
+
+app.post('/api/film/remove', (req, res) => {
+    const { id } = req.body;
+    connector( (dbo) => {
+        dbo.collection('films').deleteOne({ film_id: id }, (err, result) => {
+            res.send({success: true})
+        });
+    })
+});
+
+app.post('/api/cat/remove', (req, res) => {
+    const { id } = req.body;
+    connector( (dbo) => {
+        dbo.collection('categories').deleteOne({ id }, (err, result) => {
+            res.send({success: true})
+        });
+    })
+});
+
+/* This gonna be completed after the database at stable state */
+app.post('/api/search', (req, res)=>{
+    const { searchCriteria, advanced } = req.body;
+    let searchResult = [{ msg: "Not completed yet" }];
+    if( !advanced ){
+        const { searchString } = searchCriteria;
+
+    }else{
+        const { searchString, searchQueue, releaseYear } = searchCriteria;
+    }
+    res.send({ searchResult })
+});
 
 /* final middlewares */
 
