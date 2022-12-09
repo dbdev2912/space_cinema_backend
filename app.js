@@ -3,6 +3,8 @@ const express = require('express');
 const secret = require('./secret');
 const { connector } = require('./templates/db/connector.js');
 
+const cors = require('cors');
+
 const app = express()
 
 const { cropIMG } = require('./templates/img/cropImage.js');
@@ -21,6 +23,7 @@ app.use(bodyParser.urlencoded({
 
 app.use( bodyParser.json({ limit: "50mb" }) );
 
+app.use(cors())
 // app.use(express.json());
 
 /* GET routing */
@@ -73,26 +76,104 @@ app.get('/api/films', ( req, res ) => {
 
     connector( (dbo) => {
         dbo.collection('films').find({}).toArray((err, result) => {
-            res.send({ films: result });
+            if( req.session.user ){
+                const user = req.session.user;
+                const films = result.map( film => {
+                    const { registed_seats } = film;
+                    const registed_seat = registed_seats.filter( seat => seat.owner.username === user.username );
+                    let is_registed = false;
+                    if( registed_seat.length > 0 ){
+                        is_registed = true;
+                    }
+
+                    return { ...film, is_registed }
+                })
+                res.send({ films })
+            }
+            else{
+
+                res.send({ films: result });
+            }
+
         })
     })
 });
 
-app.get('/api/cats', ( req, res ) => {
+app.get('/api/films/:username', ( req, res ) => {
 
     connector( (dbo) => {
-        dbo.collection('categories').find({}).toArray((err, result) => {
-            res.send({ cats: result });
+        dbo.collection('films').find({}).toArray((err, result) => {
+            if(true){
+                const username = req.params.username;
+                const films = result.map( film => {
+                    const { registed_seats } = film;
+                    const registed_seat = registed_seats.filter( seat => seat.owner.username === username );
+                    let is_registed = false;
+                    if( registed_seat.length > 0 ){
+                        is_registed = true;
+                    }
+
+                    return { ...film, is_registed }
+                })
+                res.send({ films })
+            }
+            else{
+                res.send({ films: result });
+            }
+
         })
     })
 });
+
+
+app.get('/api/categories/detail', (req, res) => {
+    connector( (dbo) => {
+        dbo.collection('films').find({}).toArray((err, result) => {
+            const films = result;
+            dbo.collection('categories').find({}).toArray((err, result) => {
+                const cates = result.map( cate =>  {
+
+                    cate.illustrate = films.filter( film => film.categories.indexOf(cate.name) !== -1 )[0];
+                    return cate;
+                })
+                res.send({ categories: cates })
+            })
+        })
+    })
+});
+
+
+app.get('/api/cats', ( req, res ) => {
+    connector( (dbo) => {
+        dbo.collection('categories').find({}).toArray((err, result) => {
+            res.send({ cats: result })
+        })
+    })
+});
+
+app.get('/api/film/:id', (req, res) => {
+    const id = parseInt(req.params.id);
+    const user = req.session.user;
+    connector( (dbo) => {
+        dbo.collection('films').findOne({ film_id: id }, (err, result) => {
+            const film = result;
+            if( film ){
+
+                const is_registed = film.registed_seats.filter( seat => seat.owner.username === user.username ).length > 0 ? true : false;
+                console.log(is_registed);
+                res.send(200, { film: {...film, is_registed} })
+            }else{
+                res.send(404, { film: null })
+            }
+        })
+    } )
+})
 
 
 /* POST routing */
 
 app.post('/api/login', (req, res)=>{
     const { username, password } = req.body;
-
     connector( (dbo) => {
         dbo.collection('accounts').findOne({ username, password } ,(err, result)=>{
             const user = result;
@@ -144,7 +225,11 @@ app.post('/api/new/film', (req, res) => {
 
                 cropIMG(img, id, folder, "-1");
                 dbo.collection("films").insertOne(
-                    { ...film, img: `/images/${folder}/${folder}-${id}-1.png`, film_id: id }
+                    { ...film, img: `/images/${folder}/${folder}-${id}-1.png`, film_id: id,
+
+                    free_seats: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+                    registed_seats: [],
+                 }
                     ,
                     function(err, result){
                         res.send({ success: true })
@@ -179,8 +264,9 @@ app.post('/api/cates/create', (req, res) => {
             }
         });
     })
-
 })
+
+
 
 app.post('/api/film/remove', (req, res) => {
     const { id } = req.body;
@@ -212,6 +298,74 @@ app.post('/api/search', (req, res)=>{
     }
     res.send({ searchResult })
 });
+
+app.post('/api/register/ticket', (req, res) => {
+    const { id } = req.body;
+    const user = req.session.user;
+    connector( (dbo) => {
+        dbo.collection('films').findOne( {film_id: parseInt(id)}, (err, result) => {
+
+            const film = result;
+
+            if( film ){
+                const { free_seats } = film
+                if( free_seats.length > 0 ){
+
+                    const this_user_registed_seat = film.registed_seats.filter( seat => seat.owner.username === user.username );
+
+                    if( !this_user_registed_seat.length > 0 ){
+
+                        const availableSeat = free_seats.shift();
+                        film.free_seats = free_seats;
+                        film.registed_seats = [ ...film.registed_seats, { owner: user, seat: availableSeat } ]
+                        dbo.collection('films').update(
+                            { film_id: parseInt(id)} ,
+                            { $set: { registed_seats: film.registed_seats, free_seats: film.free_seats } },
+                            (err, result) => {
+                                res.send({success: true})
+                        });
+                    }
+                    else{
+                        res.send({success: false})
+                    }
+                }
+            }
+        })
+    })
+})
+
+app.post('/api/cancel/ticket', (req, res) => {
+    const { id } = req.body;
+    const user = req.session.user;
+    connector( (dbo) => {
+        dbo.collection('films').findOne( {film_id: parseInt(id)}, (err, result) => {
+
+            const film = result;
+
+            if( film ){
+                const { free_seats, registed_seats } = film
+                const registed_seat = registed_seats.filter( seat => seat.owner.username === user.username );
+                if( registed_seat.length > 0 ){
+                    const seatNumber = registed_seat[0].seat;
+
+                    film.free_seats = [ ...free_seats, seatNumber ],
+                    film.registed_seats = registed_seats.filter( seat => seat.seat !== seatNumber );
+
+                    dbo.collection('films').update(
+                        { film_id: parseInt(id)} ,
+                        { $set: { registed_seats: film.registed_seats, free_seats: film.free_seats } },
+                        (err, result) => {
+                            res.send({success: true})
+                    });
+                }
+            }
+            else{
+                res.send({ success: false })
+            }
+        })
+    })
+})
+
 
 /* final middlewares */
 

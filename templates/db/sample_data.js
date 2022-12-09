@@ -18,3 +18,8 @@ const sample_category = {
 const sample_film = {
 
 }
+
+const sample_ticket = {
+    free_seats: [1, 3, 4, 6, 9, 10, 12 ],
+    registed_seats: [2, 5, 7, 8, 11],
+}
