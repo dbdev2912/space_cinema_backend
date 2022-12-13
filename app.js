@@ -2,6 +2,7 @@ const express = require('express');
 
 const secret = require('./secret');
 const { connector } = require('./templates/db/connector.js');
+const mongo = require('mongodb');
 
 const cors = require('cors');
 
@@ -154,19 +155,34 @@ app.get('/api/cats', ( req, res ) => {
 app.get('/api/film/:id', (req, res) => {
     const id = parseInt(req.params.id);
     const user = req.session.user;
-    connector( (dbo) => {
-        dbo.collection('films').findOne({ film_id: id }, (err, result) => {
-            const film = result;
-            if( film ){
+    if( user ){
+        connector( (dbo) => {
+            dbo.collection('films').findOne({ film_id: id }, (err, result) => {
+                const film = result;
+                if( film ){
 
-                const is_registed = film.registed_seats.filter( seat => seat.owner.username === user.username ).length > 0 ? true : false;
-                console.log(is_registed);
-                res.send(200, { film: {...film, is_registed} })
-            }else{
-                res.send(404, { film: null })
-            }
-        })
-    } )
+                    const is_registed = film.registed_seats.filter( seat => seat.owner.username === user.username ).length > 0 ? true : false;
+
+                    res.send(200, { film: {...film, is_registed} })
+                }else{
+                    res.send(404, { film: null })
+                }
+            })
+        } )
+    }
+    else{
+        connector( (dbo) => {
+            dbo.collection('films').findOne({ film_id: id }, (err, result) => {
+                const film = result;
+                if( film ){
+
+                    res.send(200, { film } )
+                }else{
+                    res.send(404, { film: null })
+                }
+            })
+        } )
+    }
 })
 
 
@@ -300,8 +316,8 @@ app.post('/api/search', (req, res)=>{
 });
 
 app.post('/api/register/ticket', (req, res) => {
-    const { id } = req.body;
-    const user = req.session.user;
+    const { id, user_obj } = req.body;
+    const user = user_obj ? JSON.parse(user_obj) : req.session.user;
     connector( (dbo) => {
         dbo.collection('films').findOne( {film_id: parseInt(id)}, (err, result) => {
 
@@ -329,14 +345,17 @@ app.post('/api/register/ticket', (req, res) => {
                         res.send({success: false})
                     }
                 }
+            }else{
+                res.send({success: false})
             }
         })
     })
 })
 
 app.post('/api/cancel/ticket', (req, res) => {
-    const { id } = req.body;
-    const user = req.session.user;
+    const { id, user_obj } = req.body;
+    const user = user_obj ? JSON.parse(user_obj) : req.session.user;
+
     connector( (dbo) => {
         dbo.collection('films').findOne( {film_id: parseInt(id)}, (err, result) => {
 
@@ -366,6 +385,45 @@ app.post('/api/cancel/ticket', (req, res) => {
     })
 })
 
+
+app.post('/api/checkin', (req, res) => {
+    const { username, _id } = req.body;
+    if( _id.length === 24 ){
+
+        connector( (dbo) => {
+            dbo.collection("films").findOne({ _id: new mongo.ObjectID(`${_id}`) }, (err, result) => {
+                const film = result;
+                if( film ){
+
+                    const registed_seats = film.registed_seats;
+                    const is_registed = registed_seats.filter( seat => seat.owner.username === username );
+                    if( is_registed.length ){
+
+                        /* UPDATE CHECKIN HERE */
+                        let index = registed_seats.indexOf(is_registed[0]);
+                        registed_seats[index] = { ...registed_seats[index], checked_in: true };
+
+                        dbo.collection('films').updateOne({ _id: new mongo.ObjectID(`${_id}`) }, { $set: { registed_seats } }, (err, result) => {
+
+                            res.send({ success: true, infor: {msg: "Response", film: film, seat: is_registed[0].seat } })
+
+                        })
+
+                    }else{
+
+                        res.send({ success: false, infor: {msg: "You have not got a ticket yet!"} })
+                    }
+
+                }
+                else{
+                    res.send({ success: false, infor: {msg: "Oop! Film not found! What did you scan ?"} })
+                }
+            })
+        })
+    }else{
+        res.send({ success: false, infor: {msg: "Oop! Film not found! What did you scan ?"} })
+    }
+});
 
 /* final middlewares */
 
