@@ -19,6 +19,7 @@ function cropIMG(file, _id, folder ,new_name){
                 height = sizes.height;
                 width  = sizes.width;
             }
+            // console.log(sizes)
             if(height == width){
                 sharp(`public/img/tempImg/${_id+new_name}.png`)
                 .extract({width: width, height: height, left: 0, top: 0})

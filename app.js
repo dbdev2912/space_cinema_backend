@@ -5,10 +5,12 @@ const { connector } = require('./templates/db/connector.js');
 const mongo = require('mongodb');
 
 const cors = require('cors');
-
+const axios = require('axios');
 const app = express()
 
 const { cropIMG } = require('./templates/img/cropImage.js');
+
+const BASE_DOMAIN_NAME = "http://127.0.0.1:5000";
 
 /* middlewares */
 
@@ -317,6 +319,8 @@ app.post('/api/search', (req, res)=>{
 
 app.post('/api/register/ticket', (req, res) => {
     const { id, user_obj } = req.body;
+    console.log("Registed Ticket")
+    console.log({ id, user_obj });
     const user = user_obj ? JSON.parse(user_obj) : req.session.user;
     connector( (dbo) => {
         dbo.collection('films').findOne( {film_id: parseInt(id)}, (err, result) => {
@@ -355,7 +359,8 @@ app.post('/api/register/ticket', (req, res) => {
 app.post('/api/cancel/ticket', (req, res) => {
     const { id, user_obj } = req.body;
     const user = user_obj ? JSON.parse(user_obj) : req.session.user;
-
+    console.log("Cancelled Ticket")
+    console.log({ id, user_obj });
     connector( (dbo) => {
         dbo.collection('films').findOne( {film_id: parseInt(id)}, (err, result) => {
 
@@ -424,6 +429,90 @@ app.post('/api/checkin', (req, res) => {
         res.send({ success: false, infor: {msg: "Oop! Film not found! What did you scan ?"} })
     }
 });
+
+
+
+app.post("/api/update/offline/data", async (req, res)=>{
+    const data = JSON.parse(req.body.data);
+
+    for( let i = 0; i < data.length; i++ ){
+        let record = data[i];
+        let actionIsGet  = record.action === "true" ? true : false;
+        let BODY = { id: record.id, user: { username: record.username } }
+        const { id, user } = BODY
+
+        if( actionIsGet ){
+
+            connector( (dbo) => {
+                dbo.collection('films').findOne( {film_id: parseInt(id)}, (err, result) => {
+
+                    const film = result;
+
+                    if( film ){
+                        const { free_seats } = film
+                        if( free_seats.length > 0 ){
+
+                            const this_user_registed_seat = film.registed_seats.filter( seat => seat.owner.username === user.username );
+
+                            if( !this_user_registed_seat.length > 0 ){
+
+                                const availableSeat = free_seats.shift();
+                                film.free_seats = free_seats;
+                                film.registed_seats = [ ...film.registed_seats, { owner: user, seat: availableSeat } ]
+                                dbo.collection('films').update(
+                                    { film_id: parseInt(id)} ,
+                                    { $set: { registed_seats: film.registed_seats, free_seats: film.free_seats } },
+                                    (err, result) => {
+
+                                });
+                            }
+                            else{
+
+                            }
+                        }
+                    }else{
+
+                    }
+                })
+            })
+
+        }else{
+            connector( (dbo) => {
+                dbo.collection('films').findOne( {film_id: parseInt(id)}, (err, result) => {
+
+                    const film = result;
+
+                    if( film ){
+                        const { free_seats, registed_seats } = film
+                        const registed_seat = registed_seats.filter( seat => seat.owner.username === user.username );
+                        if( registed_seat.length > 0 ){
+                            const seatNumber = registed_seat[0].seat;
+
+                            film.free_seats = [ ...free_seats, seatNumber ],
+                            film.registed_seats = registed_seats.filter( seat => seat.seat !== seatNumber );
+
+                            dbo.collection('films').update(
+                                { film_id: parseInt(id)} ,
+                                { $set: { registed_seats: film.registed_seats, free_seats: film.free_seats } },
+                                (err, result) => {
+
+                            });
+                        }
+                    }
+                    else{
+
+                    }
+                })
+            })
+
+
+        }
+
+    }
+
+    res.send({ success: true })
+
+})
 
 /* final middlewares */
 

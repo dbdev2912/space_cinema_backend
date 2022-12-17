@@ -1,4 +1,5 @@
 const sample_customer_info = {
+    username:   "customer",
     fullname:   "Bành Thị Mộng Mèo",
     address:    "12A Unknown Road",
     district:   "West side of district 51",
@@ -8,6 +9,11 @@ const sample_customer_info = {
     email:      "mongche@sakial.com"
 }
 
+const sample_account = {
+    username: "customer",
+    password: "123",
+    role: enum("user", "staff", "admin")
+}
 
 const sample_category = {
     cateogry_id: 1,
